@@ -116,7 +116,7 @@ def main() -> int:
             print(f"{DIM}上下文已清空。{RESET}\n")
             continue
 
-        print(f"\n{BOLD}Claude ›{RESET} ", end="", flush=True)
+        print(f"\n{BOLD}助手 ›{RESET} ", end="", flush=True)
         try:
             agent.chat(user_input)
         except anthropic.AuthenticationError:
