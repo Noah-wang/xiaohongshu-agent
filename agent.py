@@ -1,12 +1,17 @@
 """小红书内容 Agent。
 
 运行:  python agent.py
-退出:  输入 exit / quit，或按 Ctrl-C
-重置:  输入 /reset 清空上下文
+
+命令:
+  /paste          多行粘贴，单独一行 . 结束
+  /file <路径>    读入文件内容，可附加要求
+  /reset          清空上下文
+  exit / quit     退出（Ctrl-C 同）
 """
 
 import os
 import sys
+from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
@@ -190,14 +195,52 @@ class Agent:
         print(f"\n{DIM}工具调用超过 {MAX_TOOL_ROUNDS} 轮，停下了。{RESET}\n")
 
 
+def read_multiline() -> str:
+    """多行粘贴。终端的 input() 一行一回车，直接粘一整篇稿子会被拆成好几轮对话。"""
+    print(f"{DIM}粘贴内容，结束后单独一行输入 .（输入 /cancel 取消）{RESET}")
+    lines: list[str] = []
+    while True:
+        try:
+            line = input()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if line.strip() == ".":
+            break
+        if line.strip() == "/cancel":
+            return ""
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def read_file_prompt(arg: str) -> str:
+    """/file <路径> [附加要求] —— 把文件内容连同要求一起发出去。"""
+    if not arg:
+        print(f"{DIM}用法：/file <路径> [附加要求]，"
+              f"例如 /file output/xxx.md 帮我去下 AI 味{RESET}\n")
+        return ""
+    parts = arg.split(None, 1)
+    path = Path(parts[0]).expanduser()
+    instruction = parts[1] if len(parts) > 1 else "看一下这篇稿子"
+    if not path.is_file():
+        print(f"{DIM}找不到文件：{path}{RESET}\n")
+        return ""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"{DIM}读不了 {path}：{e}{RESET}\n")
+        return ""
+    print(f"{DIM}已读入 {path}（{len(content)} 字符）{RESET}")
+    return f"{instruction}\n\n---\n{content}\n---"
+
+
 def main() -> int:
     mcp_tools, mcp_note = xhs_mcp.load()
     tools = local.TOOLS + mcp_tools
 
     agent = Agent(client=anthropic.Anthropic(), tools=tools)
 
-    print(f"{BOLD}小红书 Agent{RESET}  {DIM}[{MODEL}]{RESET}"
-          f"  —  exit/quit 退出，/reset 清空上下文")
+    print(f"{BOLD}小红书 Agent{RESET}  {DIM}[{MODEL}]{RESET}")
+    print(f"{DIM}/paste 粘多行  /file <路径> 读文件  /reset 清空上下文  exit 退出{RESET}")
     print(f"{DIM}工具 {len(tools)} 个：{', '.join(t['name'] for t in tools)}{RESET}")
     print(f"{DIM}{mcp_note}{RESET}\n")
 
@@ -217,6 +260,15 @@ def main() -> int:
             agent.reset()
             print(f"{DIM}上下文已清空。{RESET}\n")
             continue
+        if user_input == "/paste":
+            user_input = read_multiline()
+            if not user_input:
+                print(f"{DIM}已取消。{RESET}\n")
+                continue
+        elif user_input.startswith("/file"):
+            user_input = read_file_prompt(user_input[5:].strip())
+            if not user_input:
+                continue
 
         print(f"\n{BOLD}助手 ›{RESET} ", end="", flush=True)
         try:
