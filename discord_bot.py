@@ -125,8 +125,14 @@ class Bot(discord.Client):
         self.busy: set[int] = set()  # 同一帖子同时只跑一轮
 
     async def on_ready(self):
-        print(f"已登录：{self.user}（监听论坛 {FORUM_ID}）")
-        print(f"工具 {len(self.tools)} 个 | {self.mcp_note}")
+        # flush=True：这是常驻进程，输出重定向到文件时不刷新就什么都看不到
+        print(f"已登录：{self.user}（监听论坛 {FORUM_ID}）", flush=True)
+        print(f"工具 {len(self.tools)} 个 | {self.mcp_note}", flush=True)
+
+    async def on_error(self, event, *args, **kwargs):
+        import traceback
+        print(f"[on_error] {event}", flush=True)
+        traceback.print_exc()
 
     async def on_message(self, message: discord.Message):
         if message.author.bot:
@@ -138,9 +144,14 @@ class Bot(discord.Client):
             await message.reply("上一条还在处理，稍等一下。", mention_author=False)
             return
 
+        print(f"[收到] #{thread.name} / {message.author}: "
+              f"{message.content[:60]!r}", flush=True)
         self.busy.add(thread.id)
         try:
             await self._handle(thread, message)
+        except Exception as e:
+            print(f"[出错] {type(e).__name__}: {e}", flush=True)
+            raise
         finally:
             self.busy.discard(thread.id)
 
@@ -187,6 +198,8 @@ class Bot(discord.Client):
         await placeholder.edit(content=chunks[0])
         for c in chunks[1:]:
             await thread.send(c)
+        print(f"[完成] #{thread.name} | 工具 {len(sink.lines)} 次 | "
+              f"正文 {len(reply)} 字 → {len(chunks)} 条", flush=True)
 
         await self._send_images(thread, reply)
 
