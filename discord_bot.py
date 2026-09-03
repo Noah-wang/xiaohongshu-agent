@@ -226,7 +226,14 @@ class Bot(discord.Client):
         finally:
             ticker.cancel()
 
-        chunks = split_for_discord(reply) or ["（这轮没有输出）"]
+        # 正文为空时别只丢一句「没有输出」——把内核给出的原因带上，
+        # 否则用户在 Discord 里完全看不出发生了什么。
+        if not reply.strip():
+            why = [ln for ln in sink.lines if ln.startswith("⚠")]
+            reply = "这轮没有输出。\n" + ("\n".join(why) if why else
+                                     "内核也没报原因，可能是模型侧抽风，重发一次试试。")
+
+        chunks = split_for_discord(reply)
         await placeholder.edit(content=chunks[0])
         for c in chunks[1:]:
             await thread.send(c)

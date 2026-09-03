@@ -155,7 +155,7 @@ class Agent:
         rollback_to = len(self.messages) - 1
         last_text = ""
 
-        for _ in range(MAX_TOOL_ROUNDS):
+        for rounds in range(1, MAX_TOOL_ROUNDS + 1):
             final = self._stream_once(sink)
             if final is None:
                 del self.messages[rollback_to:]  # 这轮死了，回滚干净
@@ -166,6 +166,14 @@ class Agent:
             last_text = "".join(b.text for b in final.content if b.type == "text")
 
             if final.stop_reason != "tool_use":
+                # 推理模型偶尔会以 end_turn 正常结束、但一个 text block 都不产出。
+                # 这条路径不归 _stream_once 的 max_tokens 保护管，会静默返回空串，
+                # 前端只能显示「这轮没有输出」，看不出为什么。
+                if not last_text.strip():
+                    sink.notice(
+                        f"模型结束了这一轮却没写正文"
+                        f"（stop_reason={final.stop_reason}，工具调用 {rounds} 轮）。"
+                        f"重发一次通常就好；反复出现就把问题拆细，或调大 MAX_TOKENS。")
                 return last_text
 
             results = []
