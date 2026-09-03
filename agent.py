@@ -18,7 +18,7 @@ load_dotenv(override=True)
 # API key 和 base_url 由 SDK 直接读环境变量（ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL），
 # 见 .env。只有模型名需要自己取。
 MODEL = os.getenv("AGENT_MODEL", "deepseek-v4-flash")
-MAX_TOKENS = 8000
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8000"))
 SHOW_THINKING = os.getenv("SHOW_THINKING", "0") == "1"
 
 SYSTEM_PROMPT = """你是一个小红书内容助手，擅长选题、标题、正文和话题标签。
@@ -86,8 +86,21 @@ class Agent:
             final = stream.get_final_message()
 
         if in_thinking:
-            print(RESET, end="")
+            print(f"]{RESET}")
+
+        text = "".join(b.text for b in final.content if b.type == "text")
+
+        # max_tokens 是思考和正文共用的额度。推理模型可能把额度全烧在思考上，
+        # 结果 content 里只有 thinking 没有 text——不报错，但一个字都没输出。
+        if final.stop_reason == "max_tokens" and not text.strip():
+            print(f"\n{DIM}模型把 {MAX_TOKENS} tokens 全用在思考上了，没有输出正文。\n"
+                  f"可以简化问题重问，或调大 agent.py 里的 MAX_TOKENS。{RESET}\n")
+            self.messages.pop()  # 回滚这轮 user 消息，别让死掉的一轮污染历史
+            return
+
         print("\n")
+        if final.stop_reason == "max_tokens":
+            print(f"{DIM}（回答在 {MAX_TOKENS} tokens 处被截断）{RESET}\n")
 
         # 存整个 content（不只是文本）：thinking block 要原样带回下一轮。
         self.messages.append({"role": "assistant", "content": final.content})
