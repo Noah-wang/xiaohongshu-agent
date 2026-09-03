@@ -1,5 +1,5 @@
 ---
-name: image-视觉规范
+name: xhs-image-style
 description: 生成配图时必须遵守的视觉规范。任何要出图的场景都要先读这个。
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: style-产品宣传
+name: xhs-product-promo
 description: 给自己做的产品/工具写小红书推广帖。适用于新品发布、功能更新、找早期用户。
 ---
 

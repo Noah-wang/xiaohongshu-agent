@@ -66,11 +66,24 @@ def _safe_name(name: str) -> str:
     return name
 
 
-def read_skill(name: str) -> str:
-    path = SKILLS_DIR / _safe_name(name) / "SKILL.md"
-    if not path.exists():
+def read_skill(name: str, file: str = "") -> str:
+    """读 SKILL.md，或 skill 目录下的某个附属文件（如 references/zh-vocab.md）。
+
+    附属文件按需读取——SKILL.md 正文里会写明有哪些、什么时候该读。
+    """
+    skill_dir = SKILLS_DIR / _safe_name(name)
+    if not skill_dir.is_dir():
         avail = ", ".join(n for n, _ in skill_index())
         return f"没有叫 {name} 的 skill。现有：{avail}"
+
+    path = (skill_dir / (file or "SKILL.md")).resolve()
+    # 挡住 ../ 逃逸出 skill 目录
+    if not path.is_relative_to(skill_dir.resolve()):
+        return f"非法路径: {file}"
+    if not path.is_file():
+        extras = [str(p.relative_to(skill_dir))
+                  for p in sorted(skill_dir.rglob("*")) if p.is_file()]
+        return f"{name} 里没有 {file}。该 skill 现有文件：{', '.join(extras)}"
     return path.read_text(encoding="utf-8")
 
 
@@ -132,10 +145,16 @@ TOOLS = [
     {
         "name": "read_skill",
         "description": "读取一个写作或配图 skill 的完整规范。动笔之前必须先读对应的 skill——"
-                       "skill 里定义了这类内容的结构、语气、排版和禁忌。可用的 skill 见系统提示里的列表。",
+                       "skill 里定义了这类内容的结构、语气、排版和禁忌。可用的 skill 见系统提示里的列表。"
+                       "有些 skill 还带附属参考文件（SKILL.md 正文里会写明），"
+                       "用 file 参数按需读取，例如 file='references/zh-vocab.md'。",
         "input_schema": {
             "type": "object",
-            "properties": {"name": {"type": "string", "description": "skill 名称"}},
+            "properties": {
+                "name": {"type": "string", "description": "skill 名称"},
+                "file": {"type": "string",
+                         "description": "附属文件相对路径，留空则读 SKILL.md"},
+            },
             "required": ["name"],
         },
     },

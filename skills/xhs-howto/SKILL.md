@@ -1,5 +1,5 @@
 ---
-name: style-干货
+name: xhs-howto
 description: 写方法论、教程、经验总结类笔记。适用于分享技巧、踩坑记录、工具清单。
 ---
 
