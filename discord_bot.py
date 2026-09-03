@@ -17,6 +17,7 @@ import anthropic
 import discord
 
 from core import Agent, Sink, build_system, load_tools
+from tools import local
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 FORUM_ID = int(os.getenv("DISCORD_FORUM_CHANNEL_ID", "0") or 0)
@@ -25,12 +26,19 @@ HISTORY_LIMIT = int(os.getenv("DISCORD_HISTORY_LIMIT", "40"))
 DISCORD_LIMIT = 2000
 PROGRESS_MARK = "⚙"  # 进度消息的前缀，重建历史时要跳过
 
-# 论坛标签 → skill。标签名直接用 skill 名也行，这里给中文别名。
+# 论坛标签有两个维度：这篇写哪个产品，用哪种写法。两种都支持。
+# 标签名直接写成 skill / 产品档案的名字也能自动匹配，下面只是中文别名。
 TAG_TO_SKILL = {
     "产品宣传": "xhs-product-promo",
     "干货": "xhs-howto",
     "去ai味": "xhs-de-ai",
     "配图": "xhs-image-style",
+}
+TAG_TO_PRODUCT = {
+    "高驰agent": "coros-running-agent",
+    "高驰": "coros-running-agent",
+    "飞书mark": "feishu-mark-agent",
+    "mark": "feishu-mark-agent",
 }
 
 
@@ -102,18 +110,42 @@ async def rebuild_history(thread: discord.Thread, me: discord.ClientUser) -> lis
     return messages
 
 
-def skill_hint(thread: discord.Thread) -> str:
-    """把帖子上的论坛标签翻译成给模型的 skill 提示。"""
-    names = []
+def tag_hint(thread: discord.Thread) -> str:
+    """把帖子上的论坛标签翻译成给模型的提示。
+
+    标签可以指写法（→ skill）也可以指产品（→ 产品档案），两种都认。
+    先查别名表，查不到就直接拿标签名去和 skill / 产品档案的名字对。
+    """
+    known_skills = {n for n, _ in local.skill_index()}
+    known_products = {n for n, _ in local.product_index()}
+    skills, products, unknown = [], [], []
+
     for tag in getattr(thread, "applied_tags", []) or []:
-        key = (tag.name or "").strip().lower().replace(" ", "")
-        skill = TAG_TO_SKILL.get(key) or (tag.name if tag.name in TAG_TO_SKILL.values() else None)
-        if skill:
-            names.append(skill)
-    if not names:
-        return ""
-    return ("这个帖子带了以下标签，对应的 skill 必须读并遵守："
-            + "、".join(dict.fromkeys(names)))
+        raw = (tag.name or "").strip()
+        key = raw.lower().replace(" ", "")
+        if key in TAG_TO_SKILL:
+            skills.append(TAG_TO_SKILL[key])
+        elif key in TAG_TO_PRODUCT:
+            products.append(TAG_TO_PRODUCT[key])
+        elif raw in known_skills:
+            skills.append(raw)
+        elif raw in known_products:
+            products.append(raw)
+        elif raw:
+            unknown.append(raw)
+
+    parts = []
+    if products:
+        parts.append("这个帖子写的是这些自有产品，动笔前必须用 read_product 读档案："
+                     + "、".join(dict.fromkeys(products)))
+    if skills:
+        parts.append("这个帖子指定了写法，对应 skill 必须读并遵守："
+                     + "、".join(dict.fromkeys(skills)))
+    if products and not skills:
+        parts.append("没有指定写法，默认按 xhs-product-promo 写。")
+    if unknown:
+        print(f"[标签未识别] {unknown}（在 discord_bot.py 的映射表里加一条）", flush=True)
+    return "\n".join(parts)
 
 
 class Bot(discord.Client):
@@ -164,7 +196,7 @@ class Bot(discord.Client):
             current = message.content
 
         agent = Agent(client=anthropic.Anthropic(), tools=self.tools,
-                      system=build_system(skill_hint(thread)))
+                      system=build_system(tag_hint(thread)))
         agent.load_history(history)
 
         sink = ProgressSink()
