@@ -1,0 +1,19 @@
+[Unit]
+Description=小红书 Agent Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/noahwang_agents/xiaohongshu-agent
+# -u 关掉输出缓冲，否则 journalctl 里看不到日志
+ExecStart=/home/ubuntu/noahwang_agents/xiaohongshu-agent/.venv/bin/python -u discord_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
