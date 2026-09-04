@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from tools import local, xhs_mcp  # noqa: E402
+from tools import local, usage, xhs_mcp  # noqa: E402
 
 MODEL = os.getenv("AGENT_MODEL", "deepseek-v4-flash")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8000"))
@@ -115,6 +115,9 @@ class Agent:
                     sink.text(event.delta.text)
 
             final = stream.get_final_message()
+
+        if getattr(final, "usage", None):
+            usage.record(self.model, final.usage)
 
         text = "".join(b.text for b in final.content if b.type == "text")
 

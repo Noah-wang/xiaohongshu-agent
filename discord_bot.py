@@ -17,7 +17,7 @@ import anthropic
 import discord
 
 from core import Agent, Sink, build_system, load_tools
-from tools import local
+from tools import local, usage
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 FORUM_ID = int(os.getenv("DISCORD_FORUM_CHANNEL_ID", "0") or 0)
@@ -70,12 +70,19 @@ class ProgressSink(Sink):
 
     def __init__(self):
         self.lines: list[str] = []
+        self.images: list[str] = []
         self.dirty = False
 
     def tool_start(self, name: str, args: dict) -> None:
         brief = ", ".join(f"{k}={str(v)[:30]}" for k, v in args.items())
         self.lines.append(f"{name}({brief})")
         self.dirty = True
+
+    def tool_done(self, name: str, out: str) -> None:
+        # 直接从工具结果里收图，不要去正文里正则抓——模型不一定把 URL
+        # 原样写进回复，之前就是这么漏掉的。
+        if name == "generate_image" and out.startswith("http"):
+            self.images.append(out.strip().split()[0])
 
     def notice(self, msg: str) -> None:
         self.lines.append(f"⚠ {msg}")
@@ -154,6 +161,7 @@ class Bot(discord.Client):
         intents.message_content = True  # 需要在开发者后台勾上 Message Content Intent
         super().__init__(intents=intents)
         self.tools, self.mcp_note = load_tools()
+        usage.mark_start()  # 记账基线，之后才能算出这次会话花了多少
         self.busy: set[int] = set()  # 同一帖子同时只跑一轮
 
     async def on_ready(self):
@@ -220,7 +228,12 @@ class Bot(discord.Client):
                 # 其它帖子也没法回。丢到线程里去。
                 reply = await asyncio.to_thread(agent.chat, current, sink)
         except anthropic.APIStatusError as e:
-            reply = f"API 报错 {e.status_code}：{e.message}"
+            if e.status_code == 402:
+                reply = ("中转站余额不足，文本模型全部不可用。\n"
+                         "出图可能还能用（不同的上游池），但没有文本模型我什么都写不了。\n"
+                         "去 thebestai 后台充值后重发这条消息。")
+            else:
+                reply = f"API 报错 {e.status_code}：{e.message}"
         except Exception as e:
             reply = f"出错了：{type(e).__name__}: {e}"
         finally:
@@ -240,16 +253,27 @@ class Bot(discord.Client):
         print(f"[完成] #{thread.name} | 工具 {len(sink.lines)} 次 | "
               f"正文 {len(reply)} 字 → {len(chunks)} 条", flush=True)
 
-        await self._send_images(thread, reply)
+        await self._send_images(thread, sink, reply)
 
-    async def _send_images(self, thread: discord.Thread, reply: str):
-        """正文里如果出现了出图 URL，下载后作为附件发——CDN 链接不知道能活多久。"""
-        for url in re.findall(r"https?://\S+\.(?:png|jpg|jpeg|webp)", reply)[:4]:
+    async def _send_images(self, thread: discord.Thread, sink: "ProgressSink", reply: str):
+        """把出图结果作为附件发出去——CDN 链接不知道能活多久，附件才留得住。
+
+        主来源是工具结果（sink.images），正文里的 URL 只作补充。
+        """
+        urls = list(sink.images)
+        for u in re.findall(r"https?://\S+?\.(?:png|jpg|jpeg|webp)", reply):
+            if u not in urls:
+                urls.append(u)
+
+        for i, url in enumerate(urls[:4], 1):
             try:
                 data = await asyncio.to_thread(_fetch, url)
-                await thread.send(file=discord.File(io.BytesIO(data), "cover.png"))
-            except Exception:
-                pass  # 发不出去就算了，URL 已经在正文里
+                ext = "jpg" if data[:2] == b"\xff\xd8" else "png"
+                await thread.send(file=discord.File(io.BytesIO(data), f"cover{i}.{ext}"))
+                print(f"[配图] 已发送 {len(data)//1024}KB {ext}", flush=True)
+            except Exception as e:
+                print(f"[配图失败] {type(e).__name__}: {e}\n  {url[:80]}", flush=True)
+                await thread.send(f"配图发送失败，直接给你链接：{url}")
 
 
 def _fetch(url: str) -> bytes:

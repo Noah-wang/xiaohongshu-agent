@@ -194,9 +194,23 @@ TOOLS = [
     },
 ]
 
+TOOLS.append({
+    "name": "usage_report",
+    "description": "报告当前用的是哪个模型、本次会话消耗了多少 token、花了多少钱。"
+                   "用户问「用了多少 token」「花了多少钱」「现在用的什么模型」时调用。",
+    "input_schema": {"type": "object", "properties": {}},
+})
+
+
+def usage_report() -> str:
+    from tools import usage
+    return f"当前模型：{usage.current_model()}\n{usage.report()}"
+
+
 HANDLERS = {
     "read_skill": read_skill,
     "read_product": read_product,
     "generate_image": generate_image,
     "save_note": save_note,
+    "usage_report": usage_report,
 }

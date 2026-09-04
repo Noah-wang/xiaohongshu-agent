@@ -16,6 +16,7 @@ from pathlib import Path
 import anthropic
 
 from core import MAX_TOKENS, MODEL, Agent, Sink, load_tools
+from tools import usage
 
 SHOW_THINKING = os.getenv("SHOW_THINKING", "0") == "1"
 
@@ -108,10 +109,11 @@ def read_file_prompt(arg: str) -> str:
 
 def main() -> int:
     tools, mcp_note = load_tools()
+    usage.mark_start()  # 记账基线，之后才能算出这次会话花了多少
     agent = Agent(client=anthropic.Anthropic(), tools=tools)
 
     print(f"{BOLD}小红书 Agent{RESET}  {DIM}[{MODEL}]{RESET}")
-    print(f"{DIM}/paste 粘多行  /file <路径> 读文件  /reset 清空上下文  exit 退出{RESET}")
+    print(f"{DIM}/paste 粘多行  /file <路径> 读文件  /usage 用量  /reset 清空  exit 退出{RESET}")
     print(f"{DIM}工具 {len(tools)} 个：{', '.join(t['name'] for t in tools)}{RESET}")
     print(f"{DIM}{mcp_note}{RESET}\n")
 
@@ -130,6 +132,9 @@ def main() -> int:
         if user_input == "/reset":
             agent.reset()
             print(f"{DIM}上下文已清空。{RESET}\n")
+            continue
+        if user_input == "/usage":
+            print(f"{DIM}当前模型：{MODEL}\n{usage.report()}{RESET}\n")
             continue
         if user_input == "/paste":
             user_input = read_multiline()
@@ -152,7 +157,11 @@ def main() -> int:
             print("\n触发限流，等一会儿再试。")
             agent.messages.pop()
         except anthropic.APIStatusError as e:
-            print(f"\nAPI 报错 {e.status_code}: {e.message}")
+            if e.status_code == 402:
+                print(f"\n{DIM}中转站余额不足，文本模型全部不可用（出图可能还能用，"
+                      f"是不同的上游池）。去 thebestai 后台充值。{RESET}")
+            else:
+                print(f"\nAPI 报错 {e.status_code}: {e.message}")
             agent.messages.pop()
         except anthropic.APIConnectionError:
             print("\n网络连不上，检查一下网络。")
