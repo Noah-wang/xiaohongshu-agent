@@ -32,3 +32,21 @@ Claude API 是无状态的，"记忆"就是这份本地的 `messages` 列表。
 - 工具调用：在 `messages.stream()` 里加 `tools=`，然后处理 `stop_reason == "tool_use"`
 - 上下文太长：加 compaction（`context_management`）
 - 换成 SDK 的 tool runner（`client.beta.messages.tool_runner`），不用自己写工具循环
+
+## 部署与开发位置
+
+线上跑在腾讯云 `43.134.186.150`，路径 `~/noahwang_agents/xiaohongshu-agent`，
+和 `coros-running-agent`、`feishu-mark-agent` 并列在同一个目录下。
+
+**开发在服务器上做**，通过写权限 deploy key 推回 GitHub：
+
+```bash
+ssh ubuntu@43.134.186.150
+cd ~/noahwang_agents/xiaohongshu-agent
+# 改完
+git add -A && git commit -m "..." && git push
+```
+
+本地仓库 `git pull` 即可同步。两边不要同时改，以免分叉。
+
+`.env` 不在版本控制里，服务器和本地各有一份，改配置要分别改。
