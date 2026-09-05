@@ -57,7 +57,10 @@ def load() -> tuple[list[dict], str]:
         tools.append({
             "name": t.name,
             "description": (t.description or "")[:800],
-            "input_schema": t.inputSchema or {"type": "object", "properties": {}},
+            # mcp 2.x 用 input_schema，1.x 用 inputSchema，两个都认
+            "input_schema": (getattr(t, "input_schema", None)
+                             or getattr(t, "inputSchema", None)
+                             or {"type": "object", "properties": {}}),
         })
     _TOOL_NAMES = {t["name"] for t in tools}
 
@@ -74,8 +77,13 @@ def call(name: str, args: dict) -> str:
         return await session.call_tool(name, args)
 
     try:
-        result = asyncio.run(asyncio.wait_for(_connect(_call), timeout=120))
-    except Exception as e:
+        # 首次调用要冷启浏览器，实测可超过 120s；热起来之后大约 15s
+        result = asyncio.run(asyncio.wait_for(_connect(_call), timeout=300))
+    except BaseException as e:
+        # ExceptionGroup 默认只打印 "1 sub-exception"，真正的原因藏在子异常里
+        if isinstance(e, BaseExceptionGroup):
+            subs = "; ".join(f"{type(x).__name__}: {x}" for x in e.exceptions)
+            return f"调用 {name} 失败: {subs}"
         return f"调用 {name} 失败: {type(e).__name__}: {e}"
 
     parts = []

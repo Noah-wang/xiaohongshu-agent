@@ -1,0 +1,20 @@
+[Unit]
+Description=xiaohongshu-mcp (小红书 MCP 服务)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/noahwang_agents/xiaohongshu-mcp
+# 有头模式跑在虚拟显示上——内置 headless 会 segfault，chrome 已换成系统 Chrome 的转发脚本
+Environment=DISPLAY=:99
+Environment=AUTH_TOKEN=463be8bc55a48e6fd0f1a9ae720faba1068e533554d4dcca
+ExecStartPre=/bin/bash -c 'pgrep -f "Xvfb :99" >/dev/null || (Xvfb :99 -screen 0 1280x1024x24 & sleep 3)'
+ExecStart=/home/ubuntu/noahwang_agents/xiaohongshu-mcp/xiaohongshu-mcp-linux-amd64 -headless=false -port :18060
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
